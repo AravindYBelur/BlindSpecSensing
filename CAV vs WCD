@@ -1,0 +1,89 @@
+function cavVSwcd1()
+    clear all
+    close all
+    clc;
+    MON=100; %No of simulations
+    N=2000; 
+    g=10; % L - length of signal vector 
+    nsam=N/g; % no of samples per signal vector 
+    pfa=0.05;   % probability of false alarm  
+ 
+    f=100; % frequency 
+    T=1/f; %sampling time 
+    t1=0:T/N:T; % time vector of lenght 2001 i.e N+1
+    t=t1(1:end-1); % time vector of lenght 2000 i.e N
+ 
+    SNR=-20:1:10; % SNR for 20 different signals 
+    SNRnor=10.^(SNR/10); % linear or normalized SNR  
+    NP=2./SNRnor; % Noise Power 
+ 
+    cav_count =zeros(1,length(SNR)); 
+    wcd_count=zeros(1,length(SNR));
+    for ind=1:length(SNR) % loop for each signal with a particular SNR
+        cav_count=0;
+        wcd_count=0;
+        for mon=1:MON 
+            x=sqrt(NP(ind))*randn(N,1)+2*sin(2*pi*f*t)'; % signal with some random power added 
+            rx=0;
+            for i=1:nsam % sample the above signal 
+                xp=x((i-1)*g+1:i*g); % x(n) matrix 
+                rx=rx+xp*xp'; % Rx mean of x(n) and transpose(x(n))
+            end
+            Rxcav=rx/nsam; % probably normalizing Rx
+            gamma1=comp_gamma(g,nsam,pfa); %Threshold for CAV
+            T1=sum(sum(abs(Rxcav))); %T1 as in paper 
+            T2=sum(diag(abs(Rxcav))); %T2 as in paper 
+            if(T1/T2 > gamma1) 
+                cav_count=cav_count+1; % if PU present increment cav_count
+            end
+            %wdc algo 
+            [m,n] = size(Rxcav);%obtaining rows and columns of Rx
+            size_r = m*n; %size of Rx
+            rt=sum(diag(Rxcav));%sum of diagonal elements
+            sigsq=rt/g; %sigma^2 eqn 13 in 2015 paper
+            weight = 0;
+            r = 0;
+            r_mn = Rxcav./sigsq;%r'mn eqn 12 in 2015 paper
+            %this loop gives weight and |r'mn|
+            for i=1:g-1
+            for j=1:m
+                for k=1:n
+                    if abs(j-k)==i
+                        weight = r_mn(j,k) + weight; %eqn 11 in 2015 paper
+                        r = abs(r_mn(j,k))+r; %sum(|r'mn|) if true
+                    end
+                end
+            end
+            end
+            %Loop to find Twcd
+            for i=1:g-1
+                T = weight.*r; %eqn 10 in 2015 paper
+            end
+            %finding threshold value
+            e1=sqrt(pi/(4*nsam));
+            e2=1/nsam;
+            e3=3*sqrt(pi/2)*(1/2*nsam)^(3/2);
+            e4=2/(nsam^2);
+            sig=sqrt(4*g*(g-1)*e4 + (8/3)*g*(g-1)*(g-2)*e2^2 + (16/3)*g*(g-1)*(g-2)*e1*e3 + 2*g*(g-1)*(g-2)*(g-3)*e1^2*e2);
+            g1 = sig*qfuncinv(pfa);
+            %disp(g1)
+            if T>g1
+                wcd_count=wcd_count+1;  % if PU present increment mme_count
+            end    
+        end
+        CAV_PD(ind)=cav_count/MON; % keep CAV_PD b/w 0-1 instead of 0-100 as for every signal we have 100 simulations 
+        WCD_PD(ind)=wcd_count/MON;   % keep WCD_PD b/w 0-1 instead of 0-100 as for every signal we have 100 simulations 
+    end
+    plot(SNR,WCD_PD,'r')
+    hold on
+    plot(SNR,CAV_PD);
+    legend('WCD','CAV');
+    xlabel('SNR (dB)');
+    ylabel('Probability of detection');
+end 
+ 
+function [gamma1] = comp_gamma(L,Ns,pfa)
+ 
+    gamma1=(1+(L-1)*sqrt(2/(Ns*pi)))/(1-inv(0.5*erfc(pfa/sqrt(2)))*sqrt(2/Ns));
+ 
+end
