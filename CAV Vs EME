@@ -1,0 +1,67 @@
+function cavVSeme()
+    clear all
+    close all
+    clc;
+    	
+    M=4; %oversampling factor 
+ 
+    MON=100; 
+    N=2000; 
+    g=18; % L - length of signal vector 
+    nsam=N/g; % no of samples per signal vector 
+    pfa=0.05;   % probability of false alarm  
+ 
+    f=100; % frequency 
+    T=1/f; %sampling time 
+    t1=0:T/N:T; % time vector of lenght 2001 i.e N+1
+    t=t1(1:end-1); % time vector of lenght 2000 i.e N
+ 
+    SNR=-20:1:10; % SNR for 20 different signals 
+    SNRnor=10.^(SNR/10); % linear or normalized SNR  
+    NP=2./SNRnor; % Noise Power 
+ 
+    cav_count =zeros(1,length(SNR)); 
+    eme_count=zeros(1,length(SNR));
+    for ind=1:length(SNR) % loop for each signal with a particular SNR
+        cav_count=0;
+        eme_count=0;
+        for mon=1:MON 
+            x=sqrt(NP(ind))*randn(N,1)+2*sin(2*pi*f*t)'; % signal with some random power added 
+            TNs=sum(x.^2)/(M*nsam);
+            rx=0;
+            for i=1:nsam % sample the above signal 
+                xp=x((i-1)*g+1:i*g); % x(n) matrix 
+                rx=rx+xp*xp'; % Rx mean of x(n) and transpose(x(n))
+            end
+            Rxcav=rx/nsam; % probably normalizing Rx
+            gamma1=comp_gamma(g,nsam,pfa); %Threshold for CAV
+            T1=sum(sum(abs(Rxcav))); %T1 as in paper 
+            T2=sum(diag(abs(Rxcav))); %T2 as in paper 
+            if(T1/T2 > gamma1) 
+                cav_count=cav_count+1; % if PU present increment cav_count
+            end
+            %eme algo 
+            [eig_vec,eig_val] = eig(Rxcav); %obtaining eigen values and vectors
+            lamda_min = min(diag(eig_val)); %min eigen value
+            thresh = TNs/lamda_min; 
+            gamma = (qfuncinv(pfa)*sqrt(2*nsam)+sqrt(M)*nsam)/(sqrt(M)*(sqrt(nsam)-sqrt(M*g))^2); %THreshold for mme
+            if thresh>gamma
+                eme_count=eme_count+1;  % if PU present increment eme_count
+            end    
+        end
+        CAV_PD(ind)=cav_count/MON; % keep CAV_PD b/w 0-1 instead of 0-100 as for every signal we have 100 simulations 
+        EME_PD(ind)=eme_count/MON;   % keep EME_PD b/w 0-1 instead of 0-100 as for every signal we have 100 simulations 
+    end
+    plot(SNR,EME_PD,'r')
+    hold on
+    plot(SNR,CAV_PD);
+    legend('EME','CAV');
+    xlabel('SNR (dB)');
+    ylabel('Probability of detection');
+end 
+ 
+function [gamma1] = comp_gamma(L,Ns,pfa)
+ 
+    gamma1=(1+(L-1)*sqrt(2/(Ns*pi)))/(1-inv(0.5*erfc(pfa/sqrt(2)))*sqrt(2/Ns));
+ 
+end
